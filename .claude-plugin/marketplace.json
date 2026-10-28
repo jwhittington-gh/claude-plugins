@@ -1,0 +1,11 @@
+{
+  "name": "jwhittington-plugins",
+  "owner": { "name": "jwhittington-gh" },
+  "plugins": [
+    {
+      "name": "spend-statusline",
+      "source": "./plugins/spend-statusline",
+      "description": "Status line with session/day/week/month spend and a monthly budget projection."
+    }
+  ]
+}
