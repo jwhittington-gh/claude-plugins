@@ -78,6 +78,15 @@ class Config:
         return self._opts.get(f"show_{name}", False)
 
     @property
+    def breakdown_periods(self):
+        """Periods shown on the breakdown line, in display order."""
+        return [p for p in PERIODS if self._opts[f"breakdown_{p}"]]
+
+    @property
+    def breakdown_enabled(self):
+        return bool(self.breakdown_periods)
+
+    @property
     def budget_overridden(self):
         return bool(self._env_budget)
 
@@ -563,8 +572,8 @@ def main():
         }
         parts = [model] + [shown[k] for k in cfg.segments] + [f"{color}{warn}{RESET}"]
         line = SEP.join(parts)
-        periods = [p for p in PERIODS if cfg._opts[f"breakdown_{p}"]]
-        if periods:
+        periods = cfg.breakdown_periods
+        if cfg.breakdown_enabled:
             try:
                 extra = breakdown_line(state, periods, sid, now)
                 line += f"\n{extra}" if extra else ""
