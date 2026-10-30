@@ -104,6 +104,15 @@ month
   agents  $0.10   $41.51   $108.45   $165.41   $315.48
 ```
 
+Example with `breakdown_split` = `main/agents` and only the session period selected:
+
+```text
+            input  output  cache rd  cache wr  total
+  session
+  main    $0.00   $0.02     $0.02     $0.21  $0.25
+  agents  $0.00   $0.00     $0.00     $0.00  $0.00
+```
+
 `agents` is spend recorded under `<session>/subagents/`; `main` is everything else. Totals come from transcripts alone and are kept in the state file, updated incrementally. The first run after updating reseeds the state once. Table totals are token-based estimates and can differ slightly from the `session`/`today`/`wk`/month segments, which use Claude Code's own session cost where available.
 
 `--tokens` reads the same stored totals; see [Tokens by type](#tokens-by-type).
