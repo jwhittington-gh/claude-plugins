@@ -17,3 +17,5 @@ Install the spend status line from this plugin.
    - `CLAUDE_MONTHLY_BUDGET` sets the budget (default 1000).
    - Costs are list-price estimates, not billing.
    - Re-run this skill after a plugin update to refresh the copy.
+
+Plugin options (segments, monthly budget) are edited in `/config`.

@@ -4,6 +4,8 @@
 Run with --report for a detailed breakdown.
 Env: CLAUDE_MONTHLY_BUDGET (default 1000), CLAUDE_SPEND_BACKFILL=0 to skip the
 one-time transcript backfill, CLAUDE_SPEND_FILE to move the state file.
+Options (show_* booleans, monthly_budget) come from the plugin's userConfig, edited in
+/config and stored in settings.json pluginConfigs; env CLAUDE_MONTHLY_BUDGET wins.
 Optional ~/.claude/spend_prices.json overrides PRICES. macOS/Linux only (fcntl).
 """
 import copy
@@ -20,7 +22,72 @@ SPEND_FILE = os.path.expanduser(
     os.environ.get("CLAUDE_SPEND_FILE", "~/.claude/monthly_spend.json")
 )
 PRUNE_SECONDS = 40 * 86400
-BUDGET = float(os.environ.get("CLAUDE_MONTHLY_BUDGET", "1000"))
+SEGMENTS = ("session", "today", "week", "month", "avg", "proj")
+PLUGIN = "spend-statusline"
+
+
+class Config:
+    """Plugin options from settings.json pluginConfigs, read once; read-only accessors."""
+
+    # Mirrors plugin.json userConfig defaults.
+    DEFAULTS = {**{f"show_{k}": True for k in SEGMENTS}, "monthly_budget": 1000}
+
+    def __init__(self, options=None):
+        self._opts = dict(self.DEFAULTS)
+        self._opts.update(options or {})
+        self._env_budget = os.environ.get("CLAUDE_MONTHLY_BUDGET")
+
+    @classmethod
+    def load(cls):
+        """Defaults on any missing or malformed settings."""
+        opts = {}
+        try:
+            base = "~/.claude"
+            with open(os.path.join(os.path.expanduser(base), "settings.json")) as f:
+                configs = json.load(f).get("pluginConfigs")
+            keys = [f"{PLUGIN}@jwhittington-plugins"]
+            keys += sorted(k for k in configs if k.startswith(PLUGIN + "@"))
+            keys += [PLUGIN, f"{PLUGIN}@inline"]
+            for key in keys:
+                entry = configs.get(key)
+                got = entry.get("options") if isinstance(entry, dict) else None
+                if isinstance(got, dict):
+                    for k, default in cls.DEFAULTS.items():
+                        v = got.get(k)
+                        if isinstance(default, bool):
+                            if isinstance(v, bool):
+                                opts[k] = v
+                        elif isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0:
+                            opts[k] = v
+                    break
+        except Exception:
+            opts = {}
+        return cls(opts)
+
+    @property
+    def segments(self):
+        """Shown segment names, in display order."""
+        return [k for k in SEGMENTS if self._opts[f"show_{k}"]]
+
+    def shows(self, name):
+        return self._opts.get(f"show_{name}", False)
+
+    @property
+    def budget_overridden(self):
+        return bool(self._env_budget)
+
+    @property
+    def monthly_budget(self):
+        """Budget in USD; CLAUDE_MONTHLY_BUDGET wins over the option."""
+        try:
+            return float(self._env_budget or self._opts["monthly_budget"])
+        except (TypeError, ValueError):
+            return float(self._opts["monthly_budget"])
+
+
+CONFIG = Config.load()
+
+
 BACKFILL = os.environ.get("CLAUDE_SPEND_BACKFILL", "1") != "0"
 PRICES_FILE = os.path.expanduser("~/.claude/spend_prices.json")
 RED, YELLOW, GREEN = "\033[31m", "\033[33m", "\033[32m"
@@ -213,22 +280,24 @@ def update_monthly(session_id, cost):
 
 def budget_warning(total, avg, proj, today):
     """Budget status text for the status line."""
-    if total >= BUDGET:
+    budget = CONFIG.monthly_budget
+    if total >= budget:
         return "⚠ OVER BUDGET"
-    if proj > BUDGET and avg > 0:
-        out = today + timedelta(days=(BUDGET - total) / avg)
+    if proj > budget and avg > 0:
+        out = today + timedelta(days=(budget - total) / avg)
         return f"⚠ budget out ~{out.strftime('%b %d').replace(' 0', ' ')}"
-    if proj > 0.8 * BUDGET:
+    if proj > 0.8 * budget:
         return "⚠ nearing budget"
     return "✓ under budget"
 
 
 def projection(total, today):
     """Average daily spend, projected month-end spend, and a color for the budget status."""
+    budget = CONFIG.monthly_budget
     avg = total / today.day
     days_in_month = (today.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
     proj = avg * days_in_month.day
-    color = RED if proj > BUDGET else YELLOW if proj > 0.8 * BUDGET else GREEN
+    color = RED if proj > budget else YELLOW if proj > 0.8 * budget else GREEN
     return avg, proj, color
 
 
@@ -244,13 +313,14 @@ def report():
     except (OSError, ValueError):
         print("No spend data yet. Use Claude Code for a bit, then run this again.")
         return
+    budget = CONFIG.monthly_budget
     now = datetime.now()
     month = now.strftime("%Y-%m")
     days = {k: v for k, v in state.get("days", {}).items() if k.startswith(month)}
     total = sum(days.values())
     avg, proj, _ = projection(total, now)
     print(f"Spend report: {now.strftime('%B %Y')} (estimates, not billing)")
-    print(f"Month ${total:,.2f} of ${BUDGET:,.0f} ({100 * total / BUDGET:.1f}%) | "
+    print(f"Month ${total:,.2f} of ${budget:,.0f} ({100 * total / budget:.1f}%) | "
           f"avg ${avg:,.2f}/day | projected ${proj:,.0f} | {budget_warning(total, avg, proj, now)}")
     if total:
         print("\nDaily")
@@ -308,12 +378,16 @@ def main():
         now = datetime.now()
         avg, proj, color = projection(total, now)
         warn = budget_warning(total, avg, proj, now)
-        print(
-            f"{model}{SEP}session ${cost:.4f}{SEP}today ${day:.2f}"
-            f"{SEP}wk ${week:.2f}{SEP}{month_label} ${total:.2f}"
-            f"{SEP}avg ${avg:.2f}/d{SEP}{color}proj ${proj:.0f}/${BUDGET:.0f}{RESET}"
-            f"{SEP}{color}{warn}{RESET}"
-        )
+        shown = {
+            "session": f"session ${cost:.4f}",
+            "today": f"today ${day:.2f}",
+            "week": f"wk ${week:.2f}",
+            "month": f"{month_label} ${total:.2f}",
+            "avg": f"avg ${avg:.2f}/d",
+            "proj": f"{color}proj ${proj:.0f}/${CONFIG.monthly_budget:.0f}{RESET}",
+        }
+        parts = [model] + [shown[k] for k in CONFIG.segments] + [f"{color}{warn}{RESET}"]
+        print(SEP.join(parts))
     except Exception:
         print(
             f"{model}{SEP}session $?{SEP}today $?{SEP}wk $?{SEP}{month_label} $?"

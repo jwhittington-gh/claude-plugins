@@ -36,14 +36,35 @@ Prints this month's daily breakdown with bars, weekly totals, spend by model, yo
 | proj | avg × days in the month |
 | status | green under 80% of budget, yellow `nearing budget`, red `budget out ~date` or `OVER BUDGET` |
 
-## Config
+## Configuration
+
+Settings are plugin options, edited in `/config` (Claude Code 2.1.269 or later) and stored in `~/.claude/settings.json` under `pluginConfigs`. Changes apply on the next status line refresh.
+
+| Option | Default | Effect |
+|---|---|---|
+| `show_session` | on | Show the session segment |
+| `show_today` | on | Show the today segment |
+| `show_week` | on | Show the week segment |
+| `show_month` | on | Show the month segment |
+| `show_avg` | on | Show the daily average segment |
+| `show_proj` | on | Show the projection segment |
+| `monthly_budget` | `1000` | Budget in USD (minimum 1) |
+
+Model name and budget status always show. List options are not editable in `/config`, hence one boolean per segment. Missing or malformed settings fall back to defaults.
+
+### Environment and files
 
 | Setting | Default | Effect |
 |---|---|---|
-| `CLAUDE_MONTHLY_BUDGET` | `1000` | Budget in USD |
+| `CLAUDE_MONTHLY_BUDGET` | none | Budget in USD; overrides `monthly_budget` |
 | `CLAUDE_SPEND_BACKFILL` | `1` | `0` skips the first-run backfill |
 | `CLAUDE_SPEND_FILE` | `~/.claude/monthly_spend.json` | State file |
 | `~/.claude/spend_prices.json` | none | Price overrides, e.g. `{"claude-opus-5-5": [4, 20, 0.2]}` as `[input, output, cache_read]` per MTok |
+
+### Resetting
+
+- Options: clear the values in `/config`, or remove the plugin's entry from `pluginConfigs` in `settings.json`; defaults apply.
+- Totals: delete the state file (`~/.claude/monthly_spend.json` or `CLAUDE_SPEND_FILE`); totals are rebuilt from transcripts on the next refresh unless `CLAUDE_SPEND_BACKFILL=0`.
 
 ## Caveats
 
