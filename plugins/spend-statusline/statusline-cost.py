@@ -278,7 +278,7 @@ def update_monthly(session_id, cost):
 def budget_warning(total, avg, proj, today, budget):
     """Budget status text for the status line."""
     if total >= budget:
-        return "⚠ OVER budget"
+        return "⚠ OVER BUDGET"
     if proj > budget and avg > 0:
         out = today + timedelta(days=(budget - total) / avg)
         return f"⚠ budget out ~{out.strftime('%b %d').replace(' 0', ' ')}"
