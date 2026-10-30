@@ -46,7 +46,7 @@ Default `month`. Prints a table of tokens and USD per type (input, output, cache
 
 ## Configuration
 
-Settings are plugin options, edited in `/config` (Claude Code 2.1.269 or later) and stored in `~/.claude/settings.json` under `pluginConfigs`. Changes apply on the next status line refresh.
+Settings are plugin options, edited in `/config` (Claude Code 2.1.271 or later; older versions cannot load the `breakdown_split` option) and stored in `~/.claude/settings.json` under `pluginConfigs`. Changes apply on the next status line refresh.
 
 | Option | Default | Effect |
 |---|---|---|
@@ -56,13 +56,15 @@ Settings are plugin options, edited in `/config` (Claude Code 2.1.269 or later) 
 | `show_month` | on | Show the month segment |
 | `show_avg` | on | Show the daily average segment |
 | `show_proj` | on | Show the projection segment |
-| `breakdown_session` | off | Breakdown line: include session |
-| `breakdown_today` | off | Breakdown line: include today |
-| `breakdown_week` | off | Breakdown line: include week |
-| `breakdown_month` | off | Breakdown line: include month |
+| `breakdown` | off | Print the cost breakdown table below the status line |
+| `breakdown_split` | `combined` | `combined`, or `main/agents` for separate rows |
+| `breakdown_session` | off | Table row: session |
+| `breakdown_today` | on | Table row: today |
+| `breakdown_week` | off | Table row: week |
+| `breakdown_month` | on | Table row: month |
 | `monthly_budget` | `1000` | Budget in USD (minimum 1) |
 
-Model name and budget status always show. The breakdown line shows when any `breakdown_*` option is on, for those periods only. List options are not editable in `/config`, hence one boolean per segment. Missing or malformed settings fall back to defaults.
+Model name and budget status always show. The table shows when `breakdown` is on and at least one period is selected. List options are not editable in `/config`, hence one boolean per segment. Missing or malformed settings fall back to defaults.
 
 ### Environment and files
 
@@ -80,21 +82,31 @@ Model name and budget status always show. The breakdown line shows when any `bre
 
 ### Breakdown
 
-Enable it by turning on one or more `breakdown_*` options in `/config`. A second line then shows, per period:
+Turn on `breakdown` in `/config` to print a table below the status line: estimated spend by token type for each selected period. `cache wr` combines 5-minute and 1-hour cache writes.
 
-`session main $40.10 (cold $6.20) · agents $12.00 │ today main ... │ wk main ... │ Oct main ...`
+`combined`:
 
-| Category | Meaning |
-|---|---|
-| main | Everything except subagents |
-| cold | Subset of main: cache-write cost of requests that followed an idle gap longer than the cache TTL (5 min, or 1 h when the request wrote 1 h cache). Cache rewrites after idle. |
-| agents | Records under `<session>/subagents/` |
+```
+       input   output  cache rd  cache wr     total
+today  $0.01    $8.56    $15.20    $16.97    $40.74
+month  $0.62  $261.15   $404.13   $871.54  $1537.44
+```
 
-The session segment also shows `cold Nm ≈$X` while the session has been idle past the TTL: the estimated cost of rewriting the context on the next prompt.
+`main/agents`:
 
-Totals come from transcripts alone and are kept in the state file, updated incrementally. The first run after updating reseeds the state once. Category totals are token-based estimates and can differ slightly from the `session`/`today`/`wk`/month figures, which use Claude Code's own session cost where available.
+```
+          input   output  cache rd  cache wr     total
+today
+  main    $0.00    $5.20    $11.22    $12.25    $28.68
+  agents  $0.00    $3.36     $3.97     $4.73    $12.06
+month
+  main    $0.52  $219.63   $295.68   $706.13  $1221.96
+  agents  $0.10   $41.51   $108.45   $165.41   $315.48
+```
 
-Per-type token and USD totals (`--tokens`, no config key) are documented under [Tokens by type](#tokens-by-type). Resetting the state file also clears them until reseeded.
+`agents` is spend recorded under `<session>/subagents/`; `main` is everything else. Totals come from transcripts alone and are kept in the state file, updated incrementally. The first run after updating reseeds the state once. Table totals are token-based estimates and can differ slightly from the `session`/`today`/`wk`/month segments, which use Claude Code's own session cost where available.
+
+`--tokens` reads the same stored totals; see [Tokens by type](#tokens-by-type).
 
 ## Caveats
 
