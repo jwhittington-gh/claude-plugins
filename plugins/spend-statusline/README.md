@@ -22,6 +22,7 @@ Setup copies the script to `~/.claude/statusline-cost.py` and sets `statusLine` 
 
 - [Status line](#status-line): model, spend and budget segments.
 - [Breakdown](#breakdown): optional cost table by token type below the status line.
+- [Session PRs](#session-prs): PRs the session created or touched, colored by status.
 - [Detailed report](#detailed-report): daily, weekly, by-model and top-session spend.
 
 ### Status line
@@ -73,6 +74,19 @@ Example with `breakdown_split` = `main/agents` and only the session period selec
 
 `agents` is spend recorded under `<session>/subagents/`; `main` is everything else. Totals come from transcripts alone and are kept in the state file, updated incrementally. The first run after updating reseeds the state once. Table totals are token-based estimates and can differ slightly from the `session`/`today`/`wk`/month segments, which use Claude Code's own session cost where available.
 
+### Session PRs
+
+With `pr_integration` on, the status line lists PRs the session created or touched, read from the main and subagent transcripts (`gh pr create|view|checks|review|comment|diff|checkout|merge|edit`, `gh api .../pulls/N`, PR URLs in user messages): `PRs +#12 #13`. Each number links to the PR (OSC 8); `+` marks PRs created in the session; the repo name is added when PRs span repos (`owner/repo` when two shown repos share a name). Bare numbers need `-R`/`--repo` or a URL to resolve. Rendered as the last segment (after budget status), showing the `pr_max` (default 3) most recently seen PRs, with `[...]` when more remain. Merged, closed and nonexistent PRs are hidden and not counted unless `pr_show_obsolete` is on. `pr_show_age` appends the time since last update (`#3887·3d`, units m/h/d/w, dimmed). Shown only when PRs are found; turn `pr_integration` off in `/config` to hide it.
+
+Color comes from `gh pr view`, refreshed by a detached background process (60 s cache, next to the state file); the status line never waits on it, and links stay uncolored until the first fetch or when `gh` is unavailable.
+
+| Color | Meaning |
+|---|---|
+| red | Needs author action: failed check, changes requested, conflicts, draft, behind base |
+| yellow | Waiting on others: checks pending, review required |
+| green | Approved or no review required, checks passing, clean |
+| dim | Merged or closed (only with `pr_show_obsolete`) |
+
 ### Detailed report
 
 ```
@@ -99,6 +113,10 @@ Settings are plugin options, edited in `/config` (Claude Code 2.1.271 or later; 
 | `breakdown_today` | on | Table row: today |
 | `breakdown_week` | off | Table row: week |
 | `breakdown_month` | on | Table row: month |
+| `pr_integration` | on | Show the session's PRs when it has any |
+| `pr_max` | `3` | Max PRs shown, most recent first; `[...]` when more remain (minimum 1) |
+| `pr_show_obsolete` | off | Show merged and closed PRs dimmed (counted toward `pr_max`); otherwise hidden |
+| `pr_show_age` | off | Suffix each PR with time since its last update (`#12·3d`) |
 | `monthly_budget` | `1000` | Budget in USD (minimum 1) |
 
 Model name and budget status always show. The table shows when `breakdown` is on and at least one period is selected. List options are not editable in `/config`, hence one boolean per segment. Missing or malformed settings fall back to defaults.

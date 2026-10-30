@@ -1,6 +1,6 @@
 {
   "name": "spend-statusline",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Claude Code status line showing session, day, week, and month spend, daily average, and a monthly budget projection.",
   "userConfig": {
     "show_session": {
@@ -78,6 +78,31 @@
       "title": "Breakdown: month",
       "description": "Include month in the breakdown table.",
       "default": true
+    },
+    "pr_integration": {
+      "type": "boolean",
+      "title": "PR integration",
+      "description": "Show the session's pull requests in the status line when it has any.",
+      "default": true
+    },
+    "pr_max": {
+      "type": "number",
+      "title": "PRs shown (max)",
+      "description": "Maximum PRs shown in the status line, most recently seen first; [...] is appended when more remain.",
+      "default": 3,
+      "min": 1
+    },
+    "pr_show_obsolete": {
+      "type": "boolean",
+      "title": "Show merged and closed PRs",
+      "description": "Show merged and closed PRs dimmed; they then count toward the PR maximum. When off they are hidden and not counted.",
+      "default": false
+    },
+    "pr_show_age": {
+      "type": "boolean",
+      "title": "Show PR age",
+      "description": "Append the time since each PR's last update (m/h/d/w, dimmed) to its number, e.g. #3887·3d.",
+      "default": false
     },
     "monthly_budget": {
       "type": "number",
