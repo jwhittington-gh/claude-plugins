@@ -18,8 +18,6 @@ Answer `y` to add the marketplace, choose a scope, then run:
 
 Setup copies the script to `~/.claude/statusline-cost.py` and sets `statusLine` in `~/.claude/settings.json`. It asks before replacing an existing status line and backs up your settings first. Re-run it after a plugin update.
 
-All questions are asked on one screen, and all file changes go through one command, `setup.py` in the plugin folder, which is pre-approved for the skill so no permission prompts appear. Run `python3 setup.py --help` for the same steps without Claude.
-
 ## Detailed report
 
 ```
@@ -62,7 +60,7 @@ Default `month`. Prints a table of tokens and USD per type (input, output, cache
 
 ### Config file
 
-Path: `~/.claude/spend_statusline.json` (override with `CLAUDE_SPEND_CONFIG`). Written by `/spend-statusline:setup`; can be edited by hand:
+Path: `~/.claude/spend_statusline.json` (override with `CLAUDE_SPEND_CONFIG`). Written by the settings pane (`/spend-config`); can be edited by hand:
 
 ```json
 {"segments": ["session", "today", "month", "proj"], "monthly_budget": 1000}
@@ -78,16 +76,21 @@ Missing or invalid file: defaults. Breakdown data is collected even when `breakd
 
 ### Adjusting
 
-Re-run `/spend-statusline:setup` or edit the config file. Changes apply on the next status line refresh.
+- Pane: run `/spend-config`. Granularity (`session`, `today`, `week`, `month`), spend stats (`avg`, `proj`), spend breakdown periods (none = off) and the monthly budget are on one screen; Save writes the config file (unknown keys kept, defaults omitted), Cancel discards. A malformed file shows an error and is overwritten only on Save.
+- File: edit the config file.
+
+Changes apply on the next status line refresh.
+
+The pane is a Claude Code mod and requires mods to be enabled. The command is registered when a session starts, so start a new session after installing. It reads `CLAUDE_SPEND_CONFIG` and `HOME` from Claude Code's own environment, which should match the status line's. Not drawn on mobile. `CLAUDE_MONTHLY_BUDGET` still wins over the saved budget; the pane notes it when set.
 
 ### Resetting
 
-- Config: delete the config file; defaults apply.
+- Config: delete the config file; defaults apply (all segments, budget 1000).
 - Totals: delete the state file (`~/.claude/monthly_spend.json` or `CLAUDE_SPEND_FILE`); totals are rebuilt from transcripts on the next refresh unless `CLAUDE_SPEND_BACKFILL=0`.
 
 ### Breakdown
 
-With `breakdown.enabled`, a second line shows, per period:
+Enable it in the `/spend-config` pane (Spend breakdown: pick periods; none disables) or by setting `breakdown.enabled` in the config file. A second line then shows, per period:
 
 `session main $40.10 (cold $6.20) · agents $12.00 │ today main ... │ wk main ... │ Oct main ...`
 
