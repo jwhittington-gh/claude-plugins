@@ -39,6 +39,46 @@
       "description": "Show the projection segment in the status line.",
       "default": true
     },
+    "breakdown": {
+      "type": "boolean",
+      "title": "Cost breakdown table",
+      "description": "Print a table below the status line with spend by token type (input, output, cache read, cache write) for the periods selected below.",
+      "default": false
+    },
+    "breakdown_split": {
+      "type": "string",
+      "title": "Breakdown: split",
+      "description": "combined: one row per period. main/agents: separate rows for the main loop and subagents.",
+      "options": [
+        "combined",
+        "main/agents"
+      ],
+      "default": "combined"
+    },
+    "breakdown_session": {
+      "type": "boolean",
+      "title": "Breakdown: session",
+      "description": "Include session in the breakdown table.",
+      "default": false
+    },
+    "breakdown_today": {
+      "type": "boolean",
+      "title": "Breakdown: today",
+      "description": "Include today in the breakdown table.",
+      "default": true
+    },
+    "breakdown_week": {
+      "type": "boolean",
+      "title": "Breakdown: week",
+      "description": "Include week in the breakdown table.",
+      "default": false
+    },
+    "breakdown_month": {
+      "type": "boolean",
+      "title": "Breakdown: month",
+      "description": "Include month in the breakdown table.",
+      "default": true
+    },
     "monthly_budget": {
       "type": "number",
       "title": "Monthly budget (USD)",
