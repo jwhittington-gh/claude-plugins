@@ -55,10 +55,9 @@ export const register: Register = on => {
             {section.render(ui, patch, state)}
           </Box>
         ))}
-        <Box flexDirection="row">
-          <Button key="save" variant="primary" hotkey="s" onPress={save}>Save</Button>
-          <Text> </Text>
-          <Button key="cancel" role="dismiss" hotkey="c" onPress={close}>Cancel</Button>
+        <Box flexDirection="column">
+          <Button key="save" variant="primary" onPress={save}>Save</Button>
+          <Button key="cancel" role="dismiss" onPress={close}>Cancel</Button>
         </Box>
       </Box>
     )

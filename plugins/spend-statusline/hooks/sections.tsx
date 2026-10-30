@@ -3,6 +3,8 @@ import type { Elements, RenderChildren } from 'claude-code'
 import type { SpendDraft } from '../types'
 import { PERIODS, parseBudget } from './config'
 
+// One option per line, every option a focusable Button: arrows/Tab walk the
+// column in document order and Enter presses (a Button takes no Space).
 // A section is a heading plus rows. Adding one (Breakdown, Extras) = one entry
 // in SECTIONS, one field in SpendDraft/EMPTY/loadDraft/serialize.
 
@@ -14,7 +16,7 @@ export type Section = { id: string; title: string; render: Render }
 
 function toggles(field: 'segments' | 'breakdown', ids: readonly string[], prefix: string): Render {
   return ({ Box, Button }, patch, state) => (
-    <Box flexDirection="row">
+    <Box flexDirection="column">
       {ids.map(id => (
         <Button
           key={`${prefix}-${id}`}
@@ -26,7 +28,7 @@ function toggles(field: 'segments' | 'breakdown', ids: readonly string[], prefix
             }))
           }
         >
-          {state[field].includes(id) ? '[x]' : '[ ]'} {id}{'  '}
+          {state[field].includes(id) ? '[x]' : '[ ]'} {id}
         </Button>
       ))}
     </Box>
