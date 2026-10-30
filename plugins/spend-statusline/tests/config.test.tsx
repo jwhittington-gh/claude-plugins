@@ -95,7 +95,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await ui.press({ key: 'save' })
 
     expect(JSON.parse(writes[0]?.text ?? '')).toEqual({
-      segments: ['session', 'proj', 'month'],
+      segments: ['session', 'month', 'proj'],
       monthly_budget: 5,
       extra: { keep: true },
     })
