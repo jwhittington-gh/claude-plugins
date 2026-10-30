@@ -18,15 +18,15 @@ Answer `y` to add the marketplace, choose a scope, then run:
 
 Setup copies the script to `~/.claude/statusline-cost.py` and sets `statusLine` in `~/.claude/settings.json`. It asks before replacing an existing status line and backs up your settings first. Re-run it after a plugin update.
 
-## Detailed report
+## Features
 
-```
-/spend-statusline:report
-```
+- Status line: model, spend and budget segments.
+- Breakdown: optional cost table by token type below the status line.
+- Detailed report: daily, weekly, by-model and top-session spend.
 
-Prints this month's daily breakdown with bars, weekly totals, spend by model, your top sessions, and the budget projection. You can also run `python3 ~/.claude/statusline-cost.py --report` in a terminal.
+### Status line
 
-## What the numbers mean
+The status line shows spend for the session, day, week and month, the daily average, the month projection, and budget status. Segments are selectable in Configuration.
 
 | Field | Meaning |
 |---|---|
@@ -35,6 +35,51 @@ Prints this month's daily breakdown with bars, weekly totals, spend by model, yo
 | avg | Month total ÷ calendar days elapsed |
 | proj | avg × days in the month |
 | status | green under 80% of budget, yellow `nearing budget`, red `budget out ~date` or `OVER BUDGET` |
+
+### Breakdown
+
+Enabled via `breakdown` in [Configuration](#configuration).
+
+Turn on `breakdown` in `/config` to print a table below the status line: estimated spend by token type for each selected period. `cache wr` combines 5-minute and 1-hour cache writes.
+
+`combined`:
+
+```
+       input   output  cache rd  cache wr     total
+today  $0.01    $8.56    $15.20    $16.97    $40.74
+month  $0.62  $261.15   $404.13   $871.54  $1537.44
+```
+
+`main/agents`:
+
+```
+          input   output  cache rd  cache wr     total
+today
+  main    $0.00    $5.20    $11.22    $12.25    $28.68
+  agents  $0.00    $3.36     $3.97     $4.73    $12.06
+month
+  main    $0.52  $219.63   $295.68   $706.13  $1221.96
+  agents  $0.10   $41.51   $108.45   $165.41   $315.48
+```
+
+Example with `breakdown_split` = `main/agents` and only the session period selected:
+
+```text
+            input  output  cache rd  cache wr  total
+  session
+  main    $0.00   $0.02     $0.02     $0.21  $0.25
+  agents  $0.00   $0.00     $0.00     $0.00  $0.00
+```
+
+`agents` is spend recorded under `<session>/subagents/`; `main` is everything else. Totals come from transcripts alone and are kept in the state file, updated incrementally. The first run after updating reseeds the state once. Table totals are token-based estimates and can differ slightly from the `session`/`today`/`wk`/month segments, which use Claude Code's own session cost where available.
+
+### Detailed report
+
+```
+/spend-statusline:report
+```
+
+Prints this month's daily breakdown with bars, weekly totals, spend by model, your top sessions, and the budget projection. You can also run `python3 ~/.claude/statusline-cost.py --report` in a terminal.
 
 ## Configuration
 
@@ -71,41 +116,6 @@ Model name and budget status always show. The table shows when `breakdown` is on
 
 - Options: clear the values in `/config`, or remove the plugin's entry from `pluginConfigs` in `settings.json`; defaults apply.
 - Totals: delete the state file (`~/.claude/monthly_spend.json` or `CLAUDE_SPEND_FILE`); totals are rebuilt from transcripts on the next refresh unless `CLAUDE_SPEND_BACKFILL=0`.
-
-### Breakdown
-
-Turn on `breakdown` in `/config` to print a table below the status line: estimated spend by token type for each selected period. `cache wr` combines 5-minute and 1-hour cache writes.
-
-`combined`:
-
-```
-       input   output  cache rd  cache wr     total
-today  $0.01    $8.56    $15.20    $16.97    $40.74
-month  $0.62  $261.15   $404.13   $871.54  $1537.44
-```
-
-`main/agents`:
-
-```
-          input   output  cache rd  cache wr     total
-today
-  main    $0.00    $5.20    $11.22    $12.25    $28.68
-  agents  $0.00    $3.36     $3.97     $4.73    $12.06
-month
-  main    $0.52  $219.63   $295.68   $706.13  $1221.96
-  agents  $0.10   $41.51   $108.45   $165.41   $315.48
-```
-
-Example with `breakdown_split` = `main/agents` and only the session period selected:
-
-```text
-            input  output  cache rd  cache wr  total
-  session
-  main    $0.00   $0.02     $0.02     $0.21  $0.25
-  agents  $0.00   $0.00     $0.00     $0.00  $0.00
-```
-
-`agents` is spend recorded under `<session>/subagents/`; `main` is everything else. Totals come from transcripts alone and are kept in the state file, updated incrementally. The first run after updating reseeds the state once. Table totals are token-based estimates and can differ slightly from the `session`/`today`/`wk`/month segments, which use Claude Code's own session cost where available.
 
 ## Caveats
 
