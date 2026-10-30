@@ -99,6 +99,9 @@ class Config:
             return float(self._opts["monthly_budget"])
 
 
+CONFIG = Config.load()
+
+
 BACKFILL = os.environ.get("CLAUDE_SPEND_BACKFILL", "1") != "0"
 PRICES_FILE = os.path.expanduser("~/.claude/spend_prices.json")
 TTL_5M, TTL_1H = 300, 3600  # prompt-cache lifetimes in seconds
@@ -461,8 +464,9 @@ def breakdown_line(state, periods, session_id, now):
     return SEP.join(segs)
 
 
-def budget_warning(total, avg, proj, today, budget):
+def budget_warning(total, avg, proj, today):
     """Budget status text for the status line."""
+    budget = CONFIG.monthly_budget
     if total >= budget:
         return "⚠ OVER BUDGET"
     if proj > budget and avg > 0:
@@ -473,8 +477,9 @@ def budget_warning(total, avg, proj, today, budget):
     return "✓ under budget"
 
 
-def projection(total, today, budget):
+def projection(total, today):
     """Average daily spend, projected month-end spend, and a color for the budget status."""
+    budget = CONFIG.monthly_budget
     avg = total / today.day
     days_in_month = (today.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
     proj = avg * days_in_month.day
@@ -486,7 +491,7 @@ def bar(value, peak, width=24):
     return "█" * round(width * value / peak) if peak > 0 else ""
 
 
-def report(cfg):
+def report():
     """Detailed spend report for the current month, printed as plain text."""
     try:
         with open(SPEND_FILE) as f:
@@ -494,15 +499,15 @@ def report(cfg):
     except (OSError, ValueError):
         print("No spend data yet. Use Claude Code for a bit, then run this again.")
         return
-    budget = cfg.monthly_budget
+    budget = CONFIG.monthly_budget
     now = datetime.now()
     month = now.strftime("%Y-%m")
     days = {k: v for k, v in state.get("days", {}).items() if k.startswith(month)}
     total = sum(days.values())
-    avg, proj, _ = projection(total, now, budget)
+    avg, proj, _ = projection(total, now)
     print(f"Spend report: {now.strftime('%B %Y')} (estimates, not billing)")
     print(f"Month ${total:,.2f} of ${budget:,.0f} ({100 * total / budget:.1f}%) | "
-          f"avg ${avg:,.2f}/day | projected ${proj:,.0f} | {budget_warning(total, avg, proj, now, budget)}")
+          f"avg ${avg:,.2f}/day | projected ${proj:,.0f} | {budget_warning(total, avg, proj, now)}")
     if total:
         print("\nDaily")
         peak = max(days.values())
@@ -546,9 +551,8 @@ def report(cfg):
 
 
 def main():
-    cfg = Config.load()
     if "--report" in sys.argv:
-        report(cfg)
+        report()
         return
     month_label = datetime.now().strftime("%b")
     model = "Claude"
@@ -559,21 +563,20 @@ def main():
         sid = data.get("session_id")
         day, week, total, state = update_monthly(sid, cost, data.get("transcript_path"))
         now = datetime.now()
-        budget = cfg.monthly_budget
-        avg, proj, color = projection(total, now, budget)
-        warn = budget_warning(total, avg, proj, now, budget)
+        avg, proj, color = projection(total, now)
+        warn = budget_warning(total, avg, proj, now)
         shown = {
             "session": f"session ${cost:.4f}",
             "today": f"today ${day:.2f}",
             "week": f"wk ${week:.2f}",
             "month": f"{month_label} ${total:.2f}",
             "avg": f"avg ${avg:.2f}/d",
-            "proj": f"{color}proj ${proj:.0f}/${budget:.0f}{RESET}",
+            "proj": f"{color}proj ${proj:.0f}/${CONFIG.monthly_budget:.0f}{RESET}",
         }
-        parts = [model] + [shown[k] for k in cfg.segments] + [f"{color}{warn}{RESET}"]
+        parts = [model] + [shown[k] for k in CONFIG.segments] + [f"{color}{warn}{RESET}"]
         line = SEP.join(parts)
-        periods = cfg.breakdown_periods
-        if cfg.breakdown_enabled:
+        periods = CONFIG.breakdown_periods
+        if CONFIG.breakdown_enabled:
             try:
                 extra = breakdown_line(state, periods, sid, now)
                 line += f"\n{extra}" if extra else ""
