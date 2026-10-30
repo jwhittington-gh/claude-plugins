@@ -4,6 +4,8 @@
 Run with --report for a detailed breakdown.
 Env: CLAUDE_MONTHLY_BUDGET (default 1000), CLAUDE_SPEND_BACKFILL=0 to skip the
 one-time transcript backfill, CLAUDE_SPEND_FILE to move the state file.
+Optional config ~/.claude/spend_statusline.json (path override CLAUDE_SPEND_CONFIG):
+{"segments": [...], "monthly_budget": 1000}; env CLAUDE_MONTHLY_BUDGET wins.
 Optional ~/.claude/spend_prices.json overrides PRICES. macOS/Linux only (fcntl).
 """
 import copy
@@ -20,7 +22,26 @@ SPEND_FILE = os.path.expanduser(
     os.environ.get("CLAUDE_SPEND_FILE", "~/.claude/monthly_spend.json")
 )
 PRUNE_SECONDS = 40 * 86400
-BUDGET = float(os.environ.get("CLAUDE_MONTHLY_BUDGET", "1000"))
+CONFIG_FILE = os.path.expanduser(
+    os.environ.get("CLAUDE_SPEND_CONFIG", "~/.claude/spend_statusline.json")
+)
+SEGMENTS = ("session", "today", "week", "month", "avg", "proj")
+
+
+def load_config():
+    try:
+        with open(CONFIG_FILE) as f:
+            cfg = json.load(f)
+        return cfg if isinstance(cfg, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+CONFIG = load_config()
+try:
+    BUDGET = float(os.environ.get("CLAUDE_MONTHLY_BUDGET") or CONFIG.get("monthly_budget") or 1000)
+except (TypeError, ValueError):
+    BUDGET = 1000.0
 BACKFILL = os.environ.get("CLAUDE_SPEND_BACKFILL", "1") != "0"
 PRICES_FILE = os.path.expanduser("~/.claude/spend_prices.json")
 RED, YELLOW, GREEN = "\033[31m", "\033[33m", "\033[32m"
@@ -308,12 +329,19 @@ def main():
         now = datetime.now()
         avg, proj, color = projection(total, now)
         warn = budget_warning(total, avg, proj, now)
-        print(
-            f"{model}{SEP}session ${cost:.4f}{SEP}today ${day:.2f}"
-            f"{SEP}wk ${week:.2f}{SEP}{month_label} ${total:.2f}"
-            f"{SEP}avg ${avg:.2f}/d{SEP}{color}proj ${proj:.0f}/${BUDGET:.0f}{RESET}"
-            f"{SEP}{color}{warn}{RESET}"
-        )
+        shown = {
+            "session": f"session ${cost:.4f}",
+            "today": f"today ${day:.2f}",
+            "week": f"wk ${week:.2f}",
+            "month": f"{month_label} ${total:.2f}",
+            "avg": f"avg ${avg:.2f}/d",
+            "proj": f"{color}proj ${proj:.0f}/${BUDGET:.0f}{RESET}",
+        }
+        wanted = CONFIG.get("segments")
+        if not isinstance(wanted, list):
+            wanted = SEGMENTS
+        parts = [model] + [shown[k] for k in SEGMENTS if k in wanted] + [f"{color}{warn}{RESET}"]
+        print(SEP.join(parts))
     except Exception:
         print(
             f"{model}{SEP}session $?{SEP}today $?{SEP}wk $?{SEP}{month_label} $?"

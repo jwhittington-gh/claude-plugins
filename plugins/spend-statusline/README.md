@@ -40,10 +40,26 @@ Prints this month's daily breakdown with bars, weekly totals, spend by model, yo
 
 | Setting | Default | Effect |
 |---|---|---|
-| `CLAUDE_MONTHLY_BUDGET` | `1000` | Budget in USD |
+| `CLAUDE_MONTHLY_BUDGET` | `1000` | Budget in USD; overrides `monthly_budget` in the config file |
 | `CLAUDE_SPEND_BACKFILL` | `1` | `0` skips the first-run backfill |
 | `CLAUDE_SPEND_FILE` | `~/.claude/monthly_spend.json` | State file |
+| `CLAUDE_SPEND_CONFIG` | `~/.claude/spend_statusline.json` | Config file path |
 | `~/.claude/spend_prices.json` | none | Price overrides, e.g. `{"claude-opus-5-5": [4, 20, 0.2]}` as `[input, output, cache_read]` per MTok |
+
+### Config file
+
+`/spend-statusline:setup` writes `~/.claude/spend_statusline.json`; it can also be edited by hand:
+
+```json
+{"segments": ["session", "today", "month", "proj"], "monthly_budget": 1000}
+```
+
+| Key | Default | Effect |
+|---|---|---|
+| `segments` | all of `session`, `today`, `week`, `month`, `avg`, `proj` | Segments to print, in fixed order. Model name and budget status always show. |
+| `monthly_budget` | `1000` | Budget in USD |
+
+Without the file, output is unchanged.
 
 ## Caveats
 
