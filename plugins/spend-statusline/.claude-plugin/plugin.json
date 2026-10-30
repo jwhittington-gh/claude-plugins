@@ -2,5 +2,49 @@
   "name": "spend-statusline",
   "version": "0.2.0",
   "description": "Claude Code status line showing session, day, week, and month spend, daily average, and a monthly budget projection.",
-  "types": "./types/index.d.ts"
+  "userConfig": {
+    "show_session": {
+      "type": "boolean",
+      "title": "Show session",
+      "description": "Show the session segment in the status line.",
+      "default": true
+    },
+    "show_today": {
+      "type": "boolean",
+      "title": "Show today",
+      "description": "Show the today segment in the status line.",
+      "default": true
+    },
+    "show_week": {
+      "type": "boolean",
+      "title": "Show week",
+      "description": "Show the week segment in the status line.",
+      "default": true
+    },
+    "show_month": {
+      "type": "boolean",
+      "title": "Show month",
+      "description": "Show the month segment in the status line.",
+      "default": true
+    },
+    "show_avg": {
+      "type": "boolean",
+      "title": "Show daily average",
+      "description": "Show the daily average segment in the status line.",
+      "default": true
+    },
+    "show_proj": {
+      "type": "boolean",
+      "title": "Show projection",
+      "description": "Show the projection segment in the status line.",
+      "default": true
+    },
+    "monthly_budget": {
+      "type": "number",
+      "title": "Monthly budget (USD)",
+      "description": "Monthly budget used for the projection and budget status. CLAUDE_MONTHLY_BUDGET overrides it.",
+      "default": 1000,
+      "min": 1
+    }
+  }
 }

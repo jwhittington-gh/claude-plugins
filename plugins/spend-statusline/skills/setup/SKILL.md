@@ -18,4 +18,4 @@ Install the spend status line from this plugin.
    - Costs are list-price estimates, not billing.
    - Re-run this skill after a plugin update to refresh the copy.
 
-Finally, tell the user that `/spend-config` edits the status line settings (segments, monthly budget) in a pane (requires mods to be enabled), and that the settings live in `~/.claude/spend_statusline.json`.
+Plugin options (segments, monthly budget) are edited in `/config`.

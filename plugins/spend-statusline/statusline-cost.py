@@ -4,8 +4,8 @@
 Run with --report for a detailed breakdown.
 Env: CLAUDE_MONTHLY_BUDGET (default 1000), CLAUDE_SPEND_BACKFILL=0 to skip the
 one-time transcript backfill, CLAUDE_SPEND_FILE to move the state file.
-Optional config ~/.claude/spend_statusline.json (path override CLAUDE_SPEND_CONFIG):
-{"segments": [...], "monthly_budget": 1000}; env CLAUDE_MONTHLY_BUDGET wins.
+Options (show_* booleans, monthly_budget) come from the plugin's userConfig, edited in
+/config and stored in settings.json pluginConfigs; env CLAUDE_MONTHLY_BUDGET wins.
 Optional ~/.claude/spend_prices.json overrides PRICES. macOS/Linux only (fcntl).
 """
 import copy
@@ -22,26 +22,44 @@ SPEND_FILE = os.path.expanduser(
     os.environ.get("CLAUDE_SPEND_FILE", "~/.claude/monthly_spend.json")
 )
 PRUNE_SECONDS = 40 * 86400
-CONFIG_FILE = os.path.expanduser(
-    os.environ.get("CLAUDE_SPEND_CONFIG", "~/.claude/spend_statusline.json")
-)
 SEGMENTS = ("session", "today", "week", "month", "avg", "proj")
+PLUGIN = "spend-statusline"
+DEFAULTS = {f"show_{k}": True for k in SEGMENTS}
+DEFAULTS["monthly_budget"] = 1000
 
 
-def load_config():
+def load_options():
+    """Plugin options from settings.json pluginConfigs; defaults on any problem."""
+    opts = dict(DEFAULTS)
     try:
-        with open(CONFIG_FILE) as f:
-            cfg = json.load(f)
-        return cfg if isinstance(cfg, dict) else {}
-    except (OSError, ValueError):
-        return {}
+        base = "~/.claude"
+        with open(os.path.join(os.path.expanduser(base), "settings.json")) as f:
+            configs = json.load(f).get("pluginConfigs")
+        keys = [f"{PLUGIN}@jwhittington-plugins"]
+        keys += sorted(k for k in configs if k.startswith(PLUGIN + "@"))
+        keys += [PLUGIN, f"{PLUGIN}@inline"]
+        for key in keys:
+            entry = configs.get(key)
+            got = entry.get("options") if isinstance(entry, dict) else None
+            if isinstance(got, dict):
+                for k, default in DEFAULTS.items():
+                    v = got.get(k)
+                    if isinstance(default, bool):
+                        if isinstance(v, bool):
+                            opts[k] = v
+                    elif isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0:
+                        opts[k] = v
+                break
+    except Exception:
+        pass
+    return opts
 
 
-CONFIG = load_config()
+OPTIONS = load_options()
 try:
-    BUDGET = float(os.environ.get("CLAUDE_MONTHLY_BUDGET") or CONFIG.get("monthly_budget") or 1000)
+    BUDGET = float(os.environ.get("CLAUDE_MONTHLY_BUDGET") or OPTIONS["monthly_budget"])
 except (TypeError, ValueError):
-    BUDGET = 1000.0
+    BUDGET = float(OPTIONS["monthly_budget"])
 BACKFILL = os.environ.get("CLAUDE_SPEND_BACKFILL", "1") != "0"
 PRICES_FILE = os.path.expanduser("~/.claude/spend_prices.json")
 RED, YELLOW, GREEN = "\033[31m", "\033[33m", "\033[32m"
@@ -337,10 +355,7 @@ def main():
             "avg": f"avg ${avg:.2f}/d",
             "proj": f"{color}proj ${proj:.0f}/${BUDGET:.0f}{RESET}",
         }
-        wanted = CONFIG.get("segments")
-        if not isinstance(wanted, list):
-            wanted = SEGMENTS
-        parts = [model] + [shown[k] for k in SEGMENTS if k in wanted] + [f"{color}{warn}{RESET}"]
+        parts = [model] + [shown[k] for k in SEGMENTS if OPTIONS[f"show_{k}"]] + [f"{color}{warn}{RESET}"]
         print(SEP.join(parts))
     except Exception:
         print(
