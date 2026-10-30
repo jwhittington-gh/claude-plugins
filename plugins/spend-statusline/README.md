@@ -46,51 +46,41 @@ Default `month`. Prints a table of tokens and USD per type (input, output, cache
 
 ## Configuration
 
+Settings are plugin options, edited in `/config` (Claude Code 2.1.269 or later) and stored in `~/.claude/settings.json` under `pluginConfigs`. Changes apply on the next status line refresh.
+
+| Option | Default | Effect |
+|---|---|---|
+| `show_session` | on | Show the session segment |
+| `show_today` | on | Show the today segment |
+| `show_week` | on | Show the week segment |
+| `show_month` | on | Show the month segment |
+| `show_avg` | on | Show the daily average segment |
+| `show_proj` | on | Show the projection segment |
+| `breakdown_session` | off | Breakdown line: include session |
+| `breakdown_today` | off | Breakdown line: include today |
+| `breakdown_week` | off | Breakdown line: include week |
+| `breakdown_month` | off | Breakdown line: include month |
+| `monthly_budget` | `1000` | Budget in USD (minimum 1) |
+
+Model name and budget status always show. The breakdown line shows when any `breakdown_*` option is on, for those periods only. List options are not editable in `/config`, hence one boolean per segment. Missing or malformed settings fall back to defaults.
+
 ### Environment and files
 
 | Setting | Default | Effect |
 |---|---|---|
-| `CLAUDE_MONTHLY_BUDGET` | `1000` | Budget in USD; overrides `monthly_budget` in the config file |
+| `CLAUDE_MONTHLY_BUDGET` | none | Budget in USD; overrides `monthly_budget` |
 | `CLAUDE_SPEND_BACKFILL` | `1` | `0` skips the first-run backfill |
 | `CLAUDE_SPEND_FILE` | `~/.claude/monthly_spend.json` | State file |
-| `CLAUDE_SPEND_BREAKDOWN` | config | `1`/`0` forces the breakdown on/off |
-| `CLAUDE_SPEND_BREAKDOWN_PERIODS` | config | Comma list of `session,today,week,month` |
-| `CLAUDE_SPEND_CONFIG` | `~/.claude/spend_statusline.json` | Config file path |
 | `~/.claude/spend_prices.json` | none | Price overrides, e.g. `{"claude-opus-5-5": [4, 20, 0.2]}` as `[input, output, cache_read]` per MTok |
-
-### Config file
-
-Path: `~/.claude/spend_statusline.json` (override with `CLAUDE_SPEND_CONFIG`). Written by the settings pane (`/spend-config`); can be edited by hand:
-
-```json
-{"segments": ["session", "today", "month", "proj"], "monthly_budget": 1000}
-```
-
-| Key | Default | Effect |
-|---|---|---|
-| `segments` | all of `session`, `today`, `week`, `month`, `avg`, `proj` | Segments to print, in fixed order. Model name and budget status always show. |
-| `monthly_budget` | `1000` | Budget in USD |
-| `breakdown` | `{"enabled": false, "periods": ["session", "today", "week", "month"]}` | Adds a second status line splitting spend by category |
-
-Missing or invalid file: defaults. Breakdown data is collected even when `breakdown.enabled` is false, so enabling it shows history immediately. `CLAUDE_MONTHLY_BUDGET` wins over `monthly_budget`.
-
-### Adjusting
-
-- Pane: run `/spend-config`. Granularity (`session`, `today`, `week`, `month`), spend stats (`avg`, `proj`), spend breakdown periods (none = off) and the monthly budget are on one screen; Save writes the config file (unknown keys kept, defaults omitted), Cancel discards. A malformed file shows an error and is overwritten only on Save.
-- File: edit the config file.
-
-Changes apply on the next status line refresh.
-
-The pane is a Claude Code mod and requires mods to be enabled. The command is registered when a session starts, so start a new session after installing. It reads `CLAUDE_SPEND_CONFIG` and `HOME` from Claude Code's own environment, which should match the status line's. Not drawn on mobile. `CLAUDE_MONTHLY_BUDGET` still wins over the saved budget; the pane notes it when set.
 
 ### Resetting
 
-- Config: delete the config file; defaults apply (all segments, budget 1000).
+- Options: clear the values in `/config`, or remove the plugin's entry from `pluginConfigs` in `settings.json`; defaults apply.
 - Totals: delete the state file (`~/.claude/monthly_spend.json` or `CLAUDE_SPEND_FILE`); totals are rebuilt from transcripts on the next refresh unless `CLAUDE_SPEND_BACKFILL=0`.
 
 ### Breakdown
 
-Enable it in the `/spend-config` pane (Spend breakdown: pick periods; none disables) or by setting `breakdown.enabled` in the config file. A second line then shows, per period:
+Enable it by turning on one or more `breakdown_*` options in `/config`. A second line then shows, per period:
 
 `session main $40.10 (cold $6.20) · agents $12.00 │ today main ... │ wk main ... │ Oct main ...`
 
