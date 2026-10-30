@@ -70,6 +70,37 @@ for (const surface of ['terminal', 'desktop'] as const) {
     })
   })
 
+  test(`options form one vertical focus column, Save and Cancel last, no hotkeys (${surface})`, async ($, on) => {
+    setup(on, FILE)
+    const ui = await open($, surface)
+
+    // Document order is the order arrows and Tab walk; no kit act moves the ring.
+    const order = (await ui.findAll({})).filter(el => el.type === 'Button' || el.type === 'Input').map(el => el.key)
+    expect(order).toEqual(['seg-session', 'seg-today', 'seg-week', 'seg-month', 'seg-avg', 'seg-proj', 'budget', 'save', 'cancel'])
+
+    // A row Box holding two focusables is what broke Down; none may remain.
+    const tree = JSON.stringify(await ui.drawn())
+    expect(tree).not.toMatch(/"hotkey"/)
+    expect(tree).not.toMatch(/"flexDirection":"row"/)
+  })
+
+  test(`Enter on a focused option is its press; Budget edit then Save (${surface})`, async ($, on) => {
+    const writes = setup(on, FILE)
+    const ui = await open($, surface)
+
+    await ui.press({ key: 'seg-month' })
+    await ui.input({ key: 'budget', text: 's', kind: 'change' })
+    expect(writes).toHaveLength(0)
+    await ui.input({ key: 'budget', text: '5', kind: 'change' })
+    await ui.press({ key: 'save' })
+
+    expect(JSON.parse(writes[0]?.text ?? '')).toEqual({
+      segments: ['session', 'proj', 'month'],
+      monthly_budget: 5,
+      extra: { keep: true },
+    })
+  })
+
   test(`Cancel writes nothing (${surface})`, async ($, on) => {
     const writes = setup(on, FILE)
     const ui = await open($, surface)
