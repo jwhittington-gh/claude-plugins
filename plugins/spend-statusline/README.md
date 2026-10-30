@@ -44,7 +44,9 @@ Default `month`. Prints a table of tokens and USD per type (input, output, cache
 | proj | avg × days in the month |
 | status | green under 80% of budget, yellow `nearing budget`, red `budget out ~date` or `OVER BUDGET` |
 
-## Config
+## Configuration
+
+### Environment and files
 
 | Setting | Default | Effect |
 |---|---|---|
@@ -58,7 +60,7 @@ Default `month`. Prints a table of tokens and USD per type (input, output, cache
 
 ### Config file
 
-`/spend-statusline:setup` writes `~/.claude/spend_statusline.json`; it can also be edited by hand:
+Path: `~/.claude/spend_statusline.json` (override with `CLAUDE_SPEND_CONFIG`). Written by `/spend-statusline:setup`; can be edited by hand:
 
 ```json
 {"segments": ["session", "today", "month", "proj"], "monthly_budget": 1000}
@@ -68,10 +70,18 @@ Default `month`. Prints a table of tokens and USD per type (input, output, cache
 |---|---|---|
 | `segments` | all of `session`, `today`, `week`, `month`, `avg`, `proj` | Segments to print, in fixed order. Model name and budget status always show. |
 | `monthly_budget` | `1000` | Budget in USD |
-
 | `breakdown` | `{"enabled": false, "periods": ["session", "today", "week", "month"]}` | Adds a second status line splitting spend by category |
 
-Without the file, output is unchanged.
+Missing or invalid file: defaults. Breakdown data is collected even when `breakdown.enabled` is false, so enabling it shows history immediately. `CLAUDE_MONTHLY_BUDGET` wins over `monthly_budget`.
+
+### Adjusting
+
+Re-run `/spend-statusline:setup` or edit the config file. Changes apply on the next status line refresh.
+
+### Resetting
+
+- Config: delete the config file; defaults apply.
+- Totals: delete the state file (`~/.claude/monthly_spend.json` or `CLAUDE_SPEND_FILE`); totals are rebuilt from transcripts on the next refresh unless `CLAUDE_SPEND_BACKFILL=0`.
 
 ### Breakdown
 
