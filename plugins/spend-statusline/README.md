@@ -20,9 +20,9 @@ Setup copies the script to `~/.claude/statusline-cost.py` and sets `statusLine` 
 
 ## Features
 
-- Status line: model, spend and budget segments.
-- Breakdown: optional cost table by token type below the status line.
-- Detailed report: daily, weekly, by-model and top-session spend.
+- [Status line](#status-line): model, spend and budget segments.
+- [Breakdown](#breakdown): optional cost table by token type below the status line.
+- [Detailed report](#detailed-report): daily, weekly, by-model and top-session spend.
 
 ### Status line
 
