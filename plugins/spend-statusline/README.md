@@ -18,6 +18,8 @@ Answer `y` to add the marketplace, choose a scope, then run:
 
 Setup copies the script to `~/.claude/statusline-cost.py` and sets `statusLine` in `~/.claude/settings.json`. It asks before replacing an existing status line and backs up your settings first. Re-run it after a plugin update.
 
+All questions are asked on one screen, and all file changes go through one command, `setup.py` in the plugin folder, which is pre-approved for the skill so no permission prompts appear. Run `python3 setup.py --help` for the same steps without Claude.
+
 ## Detailed report
 
 ```
