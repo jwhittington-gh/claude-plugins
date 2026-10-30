@@ -26,6 +26,14 @@ Setup copies the script to `~/.claude/statusline-cost.py` and sets `statusLine` 
 
 Prints this month's daily breakdown with bars, weekly totals, spend by model, your top sessions, and the budget projection. You can also run `python3 ~/.claude/statusline-cost.py --report` in a terminal.
 
+## Tokens by type
+
+```
+python3 ~/.claude/statusline-cost.py --tokens [session|today|week|month]
+```
+
+Default `month`. Prints a table of tokens and USD per type (input, output, cache read, cache write 5m, cache write 1h), split into all, main and agents, plus totals and each type's share of spend. `session` uses the most recent session; `--tokens session <id>` picks another. Plain text, no ANSI unless on a TTY. Data comes from the state file, so the first status line run after updating reseeds it once. `/spend-statusline:report` includes this table.
+
 ## What the numbers mean
 
 | Field | Meaning |

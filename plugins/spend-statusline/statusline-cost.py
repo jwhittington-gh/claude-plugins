@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Claude Code status line: model, session/day/week/month cost, average, budget projection.
 
-Run with --report for a detailed breakdown.
+Run with --report for a detailed breakdown, --tokens [session|today|week|month [id]]
+for spend by token type.
 Env: CLAUDE_MONTHLY_BUDGET (default 1000), CLAUDE_SPEND_BACKFILL=0 to skip the
 one-time transcript backfill, CLAUDE_SPEND_FILE to move the state file.
 Optional config ~/.claude/spend_statusline.json (path override CLAUDE_SPEND_CONFIG):
@@ -65,7 +66,7 @@ PRICES = {
     "claude-haiku-5": (0.10, 0.50, 0.01),
     "claude-haiku-4": (1.0, 5.0, 0.10),
 }
-SEED_VERSION = "transcripts-v3"
+SEED_VERSION = "transcripts-v4"
 
 try:  # optional overrides: {"claude-opus-5-5": [input, output, cache_read], ...}
     with open(PRICES_FILE) as f:
@@ -138,6 +139,35 @@ def new_session_cats():
     return {"main": 0.0, "agent": 0.0, "cold": 0.0, "files": {}}
 
 
+TOKEN_TYPES = ("input", "output", "cache read", "cache write 5m", "cache write 1h")
+
+
+def token_parts(msg):
+    """([tokens], [USD]) per TOKEN_TYPES for one message."""
+    u = msg.get("usage") or {}
+    w5, w1 = cache_writes(u)
+    toks = [u.get("input_tokens") or 0, u.get("output_tokens") or 0, u.get("cache_read_input_tokens") or 0, w5, w1]
+    price = price_for(msg.get("model"))
+    if not price:
+        return toks, [0.0] * 5
+    inp, out, read = price
+    rates = (inp, out, read, inp * 1.25, inp * 2.0)
+    mult = 2 if u.get("speed") == "fast" else 1
+    return toks, [t * r * mult / 1e6 for t, r in zip(toks, rates)]
+
+
+def tally_tokens(cats, sid, day, kind, msg):
+    """Add per-type tokens and USD to the day and session: slot['tk'][kind] = [5 tokens + 5 USD]."""
+    toks, costs = token_parts(msg)
+    for slot in (
+        cats["days"].setdefault(day, {"main": 0.0, "agent": 0.0, "cold": 0.0}),
+        cats["sessions"].setdefault(sid, new_session_cats()),
+    ):
+        acc = slot.setdefault("tk", {}).setdefault(kind, [0.0] * 10)
+        for i, v in enumerate(toks + costs):
+            acc[i] += v
+
+
 def cat_record(cats, sid, fs, ts, msg, cost, is_agent):
     """Add one deduplicated record to the main/agent/cold totals.
 
@@ -146,6 +176,7 @@ def cat_record(cats, sid, fs, ts, msg, cost, is_agent):
     rewrite; its cache-write cost counts as cold and, like all of it, as main.
     """
     day = datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+    tally_tokens(cats, sid, day, "agent" if is_agent else "main", msg)
     if is_agent:
         tally(cats, sid, day, "agent", cost)
         return
@@ -509,9 +540,71 @@ def report():
             print(f"  {sid[:8]}  ${float(v.get('cost', 0)):>8,.2f}  {seen}")
 
 
+def period_tokens(state, period, arg, today):
+    """({main, agent: [5 tokens + 5 USD]}, label) for a period, or None when unavailable."""
+    cats = state.get("cats") or {}
+    if period == "session":
+        sessions = state.get("sessions") or {}
+        sid = arg or max(sessions, key=lambda k: sessions[k].get("seen", 0), default=None)
+        slots = [(cats.get("sessions") or {}).get(sid)]
+        label = f"session {sid[:8]}" if sid else "session"
+    else:
+        days = cats.get("days") or {}
+        if period == "today":
+            keys = [today.strftime("%Y-%m-%d")]
+        elif period == "week":
+            keys = [k for k in days if k >= (today - timedelta(days=today.weekday())).strftime("%Y-%m-%d")]
+        else:
+            keys = [k for k in days if k.startswith(today.strftime("%Y-%m"))]
+        slots = [days.get(k) for k in keys]
+        label = period
+    out = {"main": [0.0] * 10, "agent": [0.0] * 10}
+    found = False
+    for slot in slots:
+        for kind, acc in ((slot or {}).get("tk") or {}).items():
+            found = True
+            for i, v in enumerate(acc):
+                out[kind][i] += v
+    return (out, label) if found else None
+
+
+def tokens_report(argv):
+    """Plain-text table of tokens and USD by token type for a period."""
+    args = [a for a in argv if not a.startswith("--")]
+    period = args[0] if args else "month"
+    if period not in PERIODS:
+        print(f"Unknown period '{period}'. Use one of: {', '.join(PERIODS)}.")
+        return
+    try:
+        with open(SPEND_FILE) as f:
+            state = json.load(f)
+    except (OSError, ValueError):
+        state = {}
+    res = period_tokens(state, period, args[1] if len(args) > 1 else None, datetime.now())
+    if not res:
+        print("No token data yet. Run the status line once (it reseeds from transcripts), then try again.")
+        return
+    tk, label = res
+    bold, reset = ("\033[1m", RESET) if sys.stdout.isatty() else ("", "")
+    rows = []
+    for i, name in enumerate(TOKEN_TYPES):
+        m, a = tk["main"], tk["agent"]
+        rows.append((name, m[i] + a[i], m[5 + i] + a[5 + i], m[5 + i], a[5 + i]))
+    total = ("total",) + tuple(sum(r[j] for r in rows) for j in range(1, 5))
+    print(f"Tokens by type: {label} (estimates, not billing)")
+    print(f"{bold}{'type':<15}{'tokens':>10}{'$ all':>11}{'$ main':>11}{'$ agents':>11}{reset}")
+    for name, t, c, cm, ca in rows + [total]:
+        print(f"{name:<15}{t / 1e6:>9.1f}M{c:>11,.2f}{cm:>11,.2f}{ca:>11,.2f}")
+    if total[2]:
+        print("share of $: " + ", ".join(f"{r[0]} {100 * r[2] / total[2]:.0f}%" for r in rows))
+
+
 def main():
     if "--report" in sys.argv:
         report()
+        return
+    if "--tokens" in sys.argv:
+        tokens_report(sys.argv[sys.argv.index("--tokens") + 1:])
         return
     month_label = datetime.now().strftime("%b")
     model = "Claude"
