@@ -240,7 +240,7 @@ def write_state(state):
     d = os.path.dirname(SPEND_FILE)
     fd, tmp = tempfile.mkstemp(dir=d, prefix=".monthly_spend.")
     with os.fdopen(fd, "w") as f:
-        json.dump(state, f)
+        f.write(json.dumps(state))
     os.replace(tmp, SPEND_FILE)
 
 
