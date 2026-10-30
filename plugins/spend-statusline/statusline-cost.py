@@ -5,7 +5,10 @@ Run with --report for a detailed breakdown.
 Env: CLAUDE_MONTHLY_BUDGET (default 1000), CLAUDE_SPEND_BACKFILL=0 to skip the
 one-time transcript backfill, CLAUDE_SPEND_FILE to move the state file.
 Optional config ~/.claude/spend_statusline.json (path override CLAUDE_SPEND_CONFIG):
-{"segments": [...], "monthly_budget": 1000}; env CLAUDE_MONTHLY_BUDGET wins.
+{"segments": [...], "monthly_budget": 1000,
+ "breakdown": {"enabled": false, "periods": ["session", "today", "week", "month"]}};
+env CLAUDE_MONTHLY_BUDGET, CLAUDE_SPEND_BREAKDOWN=0|1 and
+CLAUDE_SPEND_BREAKDOWN_PERIODS=session,today,... win.
 Optional ~/.claude/spend_prices.json overrides PRICES. macOS/Linux only (fcntl).
 """
 import copy
@@ -44,6 +47,8 @@ except (TypeError, ValueError):
     BUDGET = 1000.0
 BACKFILL = os.environ.get("CLAUDE_SPEND_BACKFILL", "1") != "0"
 PRICES_FILE = os.path.expanduser("~/.claude/spend_prices.json")
+PERIODS = ("session", "today", "week", "month")
+TTL_5M, TTL_1H = 300, 3600  # prompt-cache lifetimes in seconds
 RED, YELLOW, GREEN = "\033[31m", "\033[33m", "\033[32m"
 DIM, RESET = "\033[2m", "\033[0m"
 SEP = f" {DIM}│{RESET} "
@@ -60,7 +65,7 @@ PRICES = {
     "claude-haiku-5": (0.10, 0.50, 0.01),
     "claude-haiku-4": (1.0, 5.0, 0.10),
 }
-SEED_VERSION = "transcripts-v2"
+SEED_VERSION = "transcripts-v3"
 
 try:  # optional overrides: {"claude-opus-5-5": [input, output, cache_read], ...}
     with open(PRICES_FILE) as f:
@@ -69,13 +74,25 @@ except (OSError, ValueError, TypeError):
     pass
 
 
-def message_cost(msg):
-    """Estimated USD for one assistant message from its usage block."""
-    model = msg.get("model") or ""
-    price = next(
-        (v for k, v in sorted(PRICES.items(), key=lambda kv: -len(kv[0])) if model.startswith(k)),
+def price_for(model):
+    return next(
+        (v for k, v in sorted(PRICES.items(), key=lambda kv: -len(kv[0])) if (model or "").startswith(k)),
         None,
     )
+
+
+def cache_writes(u):
+    """(5m, 1h) cache-write tokens of a usage block."""
+    cc = u.get("cache_creation") or {}
+    w5 = cc.get("ephemeral_5m_input_tokens")
+    if w5 is None:
+        w5 = u.get("cache_creation_input_tokens", 0)
+    return (w5 or 0), (cc.get("ephemeral_1h_input_tokens") or 0)
+
+
+def message_cost(msg):
+    """Estimated USD for one assistant message from its usage block."""
+    price = price_for(msg.get("model"))
     u = msg.get("usage") or {}
     if not price:
         return 0.0
@@ -96,41 +113,146 @@ def message_cost(msg):
     return cost * 2 if u.get("speed") == "fast" else cost
 
 
-def scan_transcripts(by_model=None):
-    """{session_id: {local_day: [message_count, estimated_cost]}} across all transcripts."""
+def read_lines(path, off=0):
+    """Complete lines after byte offset `off`: (lines, new offset)."""
+    with open(path, "rb") as f:
+        f.seek(off)
+        data = f.read()
+    end = data.rfind(b"\n") + 1
+    return data[:end].decode("utf-8", "replace").splitlines(), off + end
+
+
+def new_cats():
+    return {"days": {}, "sessions": {}}
+
+
+def tally(cats, sid, day, kind, cost):
+    for slot in (
+        cats["days"].setdefault(day, {"main": 0.0, "agent": 0.0, "cold": 0.0}),
+        cats["sessions"].setdefault(sid, new_session_cats()),
+    ):
+        slot[kind] = slot.get(kind, 0.0) + cost
+
+
+def new_session_cats():
+    return {"main": 0.0, "agent": 0.0, "cold": 0.0, "files": {}}
+
+
+def cat_record(cats, sid, fs, ts, msg, cost, is_agent):
+    """Add one deduplicated record to the main/agent/cold totals.
+
+    Cold: a main-loop request arriving after more than the cache TTL since the
+    previous main record (1h when the request writes 1h cache) pays a full cache
+    rewrite; its cache-write cost counts as cold and, like all of it, as main.
+    """
+    day = datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+    if is_agent:
+        tally(cats, sid, day, "agent", cost)
+        return
+    tally(cats, sid, day, "main", cost)
+    u = msg.get("usage") or {}
+    w5, w1 = cache_writes(u)
+    ttl = TTL_1H if w1 > 0 else TTL_5M
+    price = price_for(msg.get("model"))
+    prev = fs.get("ts")
+    if price and prev is not None and ts - prev > ttl:
+        write = (w5 * 1.25 + w1 * 2.0) * price[0] / 1e6
+        tally(cats, sid, day, "cold", write * 2 if u.get("speed") == "fast" else write)
+    fs["ts"] = ts
+    if price:
+        ctx = sum(u.get(k) or 0 for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
+        cats["sessions"][sid]["last"] = [ts, ctx, price[0], 2.0 if w1 > 0 else 1.25, ttl]
+
+
+def parse_record(line):
+    """(message, message id, epoch ts) for an assistant record, else None."""
+    try:
+        e = json.loads(line)
+        if e.get("type") != "assistant":
+            return None
+        msg = e["message"]
+        key = msg.get("id") or e.get("uuid")
+        ts = datetime.fromisoformat(e["timestamp"].replace("Z", "+00:00")).timestamp()
+    except (ValueError, KeyError, AttributeError, TypeError):
+        return None
+    return msg, key, ts
+
+
+def scan_transcripts(by_model=None, cats=None):
+    """{session_id: {local_day: [message_count, estimated_cost]}} across all transcripts.
+
+    With `cats`, also fills main/agent/cold totals and per-file offsets.
+    """
     root = os.path.expanduser("~/.claude/projects")
     files = glob.glob(f"{root}/*/*.jsonl") + glob.glob(f"{root}/*/*/subagents/*.jsonl")
     files.sort(key=lambda f: os.stat(f).st_birthtime if hasattr(os.stat(f), "st_birthtime") else os.stat(f).st_mtime)
     seen_ids, out = set(), {}
     for path in files:
         parts = path.split("/")
-        sid = parts[-1][:-6] if len(parts) == len(root.split("/")) + 2 else parts[-3]
+        is_agent = len(parts) != len(root.split("/")) + 2
+        sid = parts[-3] if is_agent else parts[-1][:-6]
+        rel = "agents/" + parts[-1] if is_agent else "main"
+        fs, last = {}, None
         try:
-            with open(path) as f:
-                for line in f:
-                    try:
-                        e = json.loads(line)
-                        if e.get("type") != "assistant":
-                            continue
-                        msg = e["message"]
-                        key = msg.get("id") or e.get("uuid")
-                        if key in seen_ids:
-                            continue
-                        seen_ids.add(key)
-                        ts = datetime.fromisoformat(e["timestamp"].replace("Z", "+00:00"))
-                    except (ValueError, KeyError, AttributeError, TypeError):
-                        continue
-                    day = ts.astimezone().strftime("%Y-%m-%d")
-                    slot = out.setdefault(sid, {}).setdefault(day, [0, 0.0])
-                    cost = message_cost(msg)
-                    slot[0] += 1
-                    slot[1] += cost
-                    if by_model is not None:
-                        k = (day, msg.get("model") or "unknown")
-                        by_model[k] = by_model.get(k, 0.0) + cost
+            lines, end = read_lines(path)
         except OSError:
-            pass
+            continue
+        for line in lines:
+            rec = parse_record(line)
+            if not rec:
+                continue
+            msg, key, ts_epoch = rec
+            if key in seen_ids:
+                continue
+            seen_ids.add(key)
+            last = key
+            day = datetime.fromtimestamp(ts_epoch).strftime("%Y-%m-%d")
+            slot = out.setdefault(sid, {}).setdefault(day, [0, 0.0])
+            cost = message_cost(msg)
+            slot[0] += 1
+            slot[1] += cost
+            if by_model is not None:
+                k = (day, msg.get("model") or "unknown")
+                by_model[k] = by_model.get(k, 0.0) + cost
+            if cats is not None and not str(msg.get("model") or "").startswith("<"):
+                cats["sessions"].setdefault(sid, new_session_cats())
+                cat_record(cats, sid, fs, ts_epoch, msg, cost, is_agent)
+        if cats is not None:
+            fs.update(off=end, id=last)
+            cats["sessions"].setdefault(sid, new_session_cats())["files"][rel] = fs
     return out
+
+
+def update_cats(state, sid, transcript_path):
+    """Fold new bytes of this session's transcripts into state['cats'] (no full rescan)."""
+    cats = state.setdefault("cats", new_cats())
+    sess = cats["sessions"].setdefault(sid, new_session_cats())
+    base = transcript_path[:-6] if transcript_path.endswith(".jsonl") else transcript_path
+    files = [("main", transcript_path, False)] + [
+        ("agents/" + os.path.basename(p), p, True)
+        for p in sorted(glob.glob(f"{base}/subagents/*.jsonl"))
+    ]
+    for rel, path, is_agent in files:
+        fs = sess["files"].setdefault(rel, {})
+        try:
+            if os.path.getsize(path) < fs.get("off", 0):
+                fs.clear()  # truncated or replaced: restart this file
+            lines, end = read_lines(path, fs.get("off", 0))
+        except OSError:
+            continue
+        seen = set()
+        for line in lines:
+            rec = parse_record(line)
+            if not rec:
+                continue
+            msg, key, ts = rec
+            if key in seen or key == fs.get("id"):
+                continue
+            seen.add(key)
+            fs["id"] = key
+            if not str(msg.get("model") or "").startswith("<"):
+                cat_record(cats, sid, fs, ts, msg, message_cost(msg), is_agent)
+        fs["off"] = end
 
 
 def seed_days(state, now):
@@ -139,7 +261,8 @@ def seed_days(state, now):
     Tracked sessions: saved cost split by message count per day.
     Untracked sessions: estimated from token usage, then recorded as baselines.
     """
-    scanned = scan_transcripts()
+    cats = new_cats()
+    scanned = scan_transcripts(cats=cats)
     sessions = state["sessions"]
     days = {}
     for sid, by_day in scanned.items():
@@ -165,6 +288,8 @@ def seed_days(state, now):
     state["total"] = sum(v for k, v in days.items() if k.startswith(month))
     state["month"] = month
     state["seeded"] = SEED_VERSION
+    cats["sessions"] = {k: v for k, v in cats["sessions"].items() if k in sessions}
+    state["cats"] = cats
 
 
 def load_state(month):
@@ -203,7 +328,7 @@ def week_total(days, today):
     return sum(v for k, v in days.items() if k >= monday)
 
 
-def update_monthly(session_id, cost):
+def update_monthly(session_id, cost, transcript_path=None):
     now = time.time()
     today = datetime.now()
     month = today.strftime("%Y-%m")
@@ -224,12 +349,81 @@ def update_monthly(session_id, cost):
         }
         cutoff = (today - timedelta(days=40)).strftime("%Y-%m-%d")
         state["days"] = {k: v for k, v in state["days"].items() if k >= cutoff}
+        if session_id and transcript_path and os.path.isfile(transcript_path):
+            try:
+                update_cats(state, session_id, transcript_path)
+            except Exception:
+                pass
+        cats = state.get("cats")
+        if isinstance(cats, dict):
+            cats["days"] = {k: v for k, v in cats.get("days", {}).items() if k >= cutoff}
+            cats["sessions"] = {k: v for k, v in cats.get("sessions", {}).items() if k in state["sessions"]}
         write_state(state)
     return (
         float(state["days"].get(day, 0.0)),
         week_total(state["days"], today),
         state["total"],
+        state,
     )
+
+
+def breakdown_config():
+    """(enabled, periods) from the config file, overridden by env."""
+    enabled, periods = False, list(PERIODS)
+    try:
+        b = CONFIG.get("breakdown") or {}
+        enabled = bool(b.get("enabled", False))
+        periods = [p for p in b.get("periods", periods) if p in PERIODS]
+    except (AttributeError, TypeError):
+        pass
+    env = os.environ.get("CLAUDE_SPEND_BREAKDOWN")
+    if env is not None:
+        enabled = env.strip().lower() not in ("", "0", "false", "no", "off")
+    env = os.environ.get("CLAUDE_SPEND_BREAKDOWN_PERIODS")
+    if env:
+        periods = [p for p in (x.strip() for x in env.split(",")) if p in PERIODS]
+    return enabled, periods
+
+
+def period_cats(state, period, session_id, today):
+    """{main, agent, cold} totals for a period, or None when unavailable."""
+    cats = state.get("cats") or {}
+    if period == "session":
+        c = (cats.get("sessions") or {}).get(session_id)
+        return c
+    days = cats.get("days") or {}
+    if period == "today":
+        keys = [today.strftime("%Y-%m-%d")]
+    elif period == "week":
+        monday = (today - timedelta(days=today.weekday())).strftime("%Y-%m-%d")
+        keys = [k for k in days if k >= monday]
+    else:
+        keys = [k for k in days if k.startswith(today.strftime("%Y-%m"))]
+    out = {"main": 0.0, "agent": 0.0, "cold": 0.0}
+    for k in keys:
+        for kind in out:
+            out[kind] += (days.get(k) or {}).get(kind, 0.0)
+    return out
+
+
+def breakdown_line(state, periods, session_id, now):
+    """Second status line: main (cold) and agents spend per period."""
+    labels = {"session": "session", "today": "today", "week": "wk", "month": now.strftime("%b")}
+    segs = []
+    for p in periods:
+        c = period_cats(state, p, session_id, now)
+        if not c:
+            continue
+        seg = f"{labels[p]} main ${c['main']:.2f} (cold ${c['cold']:.2f}) · agents ${c['agent']:.2f}"
+        if p == "session":
+            last = c.get("last")
+            if last:
+                ts, ctx, inp, mult, ttl = last
+                idle = now.timestamp() - ts
+                if idle > ttl:
+                    seg += f" · {YELLOW}cold {round(idle / 60)}m ≈${ctx * inp * mult / 1e6:.2f}{RESET}"
+        segs.append(seg)
+    return SEP.join(segs)
 
 
 def budget_warning(total, avg, proj, today):
@@ -325,7 +519,8 @@ def main():
         data = json.load(sys.stdin)
         model = (data.get("model") or {}).get("display_name") or model
         cost = float((data.get("cost") or {}).get("total_cost_usd") or 0.0)
-        day, week, total = update_monthly(data.get("session_id"), cost)
+        sid = data.get("session_id")
+        day, week, total, state = update_monthly(sid, cost, data.get("transcript_path"))
         now = datetime.now()
         avg, proj, color = projection(total, now)
         warn = budget_warning(total, avg, proj, now)
@@ -341,7 +536,15 @@ def main():
         if not isinstance(wanted, list):
             wanted = SEGMENTS
         parts = [model] + [shown[k] for k in SEGMENTS if k in wanted] + [f"{color}{warn}{RESET}"]
-        print(SEP.join(parts))
+        line = SEP.join(parts)
+        enabled, periods = breakdown_config()
+        if enabled and periods:
+            try:
+                extra = breakdown_line(state, periods, sid, now)
+                line += f"\n{extra}" if extra else ""
+            except Exception:
+                pass
+        print(line)
     except Exception:
         print(
             f"{model}{SEP}session $?{SEP}today $?{SEP}wk $?{SEP}{month_label} $?"

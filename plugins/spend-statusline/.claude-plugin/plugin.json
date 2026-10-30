@@ -1,5 +1,5 @@
 {
   "name": "spend-statusline",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Claude Code status line showing session, day, week, and month spend, daily average, and a monthly budget projection."
 }

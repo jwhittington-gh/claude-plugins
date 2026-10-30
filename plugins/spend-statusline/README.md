@@ -43,6 +43,8 @@ Prints this month's daily breakdown with bars, weekly totals, spend by model, yo
 | `CLAUDE_MONTHLY_BUDGET` | `1000` | Budget in USD; overrides `monthly_budget` in the config file |
 | `CLAUDE_SPEND_BACKFILL` | `1` | `0` skips the first-run backfill |
 | `CLAUDE_SPEND_FILE` | `~/.claude/monthly_spend.json` | State file |
+| `CLAUDE_SPEND_BREAKDOWN` | config | `1`/`0` forces the breakdown on/off |
+| `CLAUDE_SPEND_BREAKDOWN_PERIODS` | config | Comma list of `session,today,week,month` |
 | `CLAUDE_SPEND_CONFIG` | `~/.claude/spend_statusline.json` | Config file path |
 | `~/.claude/spend_prices.json` | none | Price overrides, e.g. `{"claude-opus-5-5": [4, 20, 0.2]}` as `[input, output, cache_read]` per MTok |
 
@@ -59,7 +61,25 @@ Prints this month's daily breakdown with bars, weekly totals, spend by model, yo
 | `segments` | all of `session`, `today`, `week`, `month`, `avg`, `proj` | Segments to print, in fixed order. Model name and budget status always show. |
 | `monthly_budget` | `1000` | Budget in USD |
 
+| `breakdown` | `{"enabled": false, "periods": ["session", "today", "week", "month"]}` | Adds a second status line splitting spend by category |
+
 Without the file, output is unchanged.
+
+### Breakdown
+
+With `breakdown.enabled`, a second line shows, per period:
+
+`session main $40.10 (cold $6.20) · agents $12.00 │ today main ... │ wk main ... │ Oct main ...`
+
+| Category | Meaning |
+|---|---|
+| main | Everything except subagents |
+| cold | Subset of main: cache-write cost of requests that followed an idle gap longer than the cache TTL (5 min, or 1 h when the request wrote 1 h cache). Cache rewrites after idle. |
+| agents | Records under `<session>/subagents/` |
+
+The session segment also shows `cold Nm ≈$X` while the session has been idle past the TTL: the estimated cost of rewriting the context on the next prompt.
+
+Totals come from transcripts alone and are kept in the state file, updated incrementally. The first run after updating reseeds the state once. Category totals are token-based estimates and can differ slightly from the `session`/`today`/`wk`/month figures, which use Claude Code's own session cost where available.
 
 ## Caveats
 
