@@ -99,6 +99,8 @@ The session segment also shows `cold Nm ≈$X` while the session has been idle p
 
 Totals come from transcripts alone and are kept in the state file, updated incrementally. The first run after updating reseeds the state once. Category totals are token-based estimates and can differ slightly from the `session`/`today`/`wk`/month figures, which use Claude Code's own session cost where available.
 
+Per-type token and USD totals (`--tokens`, no config key) are documented under [Tokens by type](#tokens-by-type). Resetting the state file also clears them until reseeded.
+
 ## Caveats
 
 - **First run reads every transcript** under `~/.claude/projects` to backfill past days. It runs once, so the first refresh can be slow. Skip it with `CLAUDE_SPEND_BACKFILL=0`.
