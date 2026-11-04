@@ -359,6 +359,7 @@ PR_CMD = re.compile(
 )
 PR_API = re.compile(r"\brepos/([\w.-]+/[\w.-]+)/pulls/(\d+)")
 PR_REPO_FLAG = re.compile(r"""(?:-R|--repo)[ =]+["']?([\w.-]+/[\w.-]+)""")
+PR_STATE_V = 2  # bump to drop cached prs state built by older extraction
 PR_TTL = 60  # seconds a fetched PR state stays fresh
 PR_CACHE = SPEND_FILE + ".prs.json"
 PR_LOCK = SPEND_FILE + ".prs.lock"
@@ -378,9 +379,21 @@ def result_text(block):
     return c if isinstance(c, str) else ""
 
 
-def scan_pr_line(line, found, pend):
-    """Record PRs referenced by one transcript record; `pend` holds open `gh pr create` tool ids."""
-    if "/pull/" not in line and "gh pr" not in line and "gh api" not in line:
+def pr_failed(text, repo, num):
+    """True when a tool result shows `repo`/`num` does not exist (404 / unresolvable repo)."""
+    for ln in text.splitlines():
+        if repo in ln and re.search(r"404|Not Found|Could not resolve", ln):
+            return True
+    return False
+
+
+def scan_pr_line(line, found, pend, cand):
+    """Record PRs referenced by one transcript record.
+
+    `pend` holds open `gh pr create` tool ids; `cand` maps tool ids to PRs named by a command,
+    recorded only once the result does not show them missing (a guessed repo 404s).
+    """
+    if not cand and "/pull/" not in line and "gh pr" not in line and "gh api" not in line:
         return
     try:
         rec = json.loads(line)
@@ -396,25 +409,31 @@ def scan_pr_line(line, found, pend):
         kind = b.get("type")
         if kind == "tool_use" and isinstance(b.get("input"), dict):
             cmd = str(b["input"].get("command") or "")
+            hits = []
             for verb, args in PR_CMD.findall(cmd):
                 if verb == "create":
                     pend.append(b.get("id"))
                     continue
                 m = PR_URL.search(args)
                 if m:
-                    pr_add(found, m.group(1), m.group(2))
+                    hits.append((m.group(1), m.group(2)))
                     continue
                 repo = PR_REPO_FLAG.search(args)
                 num = next((t for t in args.split() if t.isdigit()), None)
                 if repo and num:
-                    pr_add(found, repo.group(1), num)
+                    hits.append((repo.group(1), num))
             if "gh api" in cmd:
-                for repo, num in PR_API.findall(cmd):
-                    pr_add(found, repo, num)
+                hits.extend(PR_API.findall(cmd))
+            if hits and b.get("id"):
+                cand[b["id"]] = [list(h) for h in hits]
         elif kind == "tool_result":
+            text = result_text(b)
+            for repo, num in cand.pop(b.get("tool_use_id"), []):
+                if not pr_failed(text, repo, num):
+                    pr_add(found, repo, num)
             if b.get("tool_use_id") in pend:
                 pend.remove(b.get("tool_use_id"))
-                for repo, num in PR_URL.findall(result_text(b)):
+                for repo, num in PR_URL.findall(text):
                     pr_add(found, repo, num, created=True)
         elif kind == "text" and rec.get("type") == "user":
             for repo, num in PR_URL.findall(str(b.get("text") or "")):
@@ -423,6 +442,9 @@ def scan_pr_line(line, found, pend):
 
 def update_prs(state, sid, transcript_path):
     """Fold new bytes of the main and subagent transcripts into state['prs'][sid]."""
+    if state.get("prs_v") != PR_STATE_V:
+        state["prs"] = {}
+        state["prs_v"] = PR_STATE_V
     sess = state.setdefault("prs", {}).setdefault(sid, {"files": {}, "found": {}})
     base = transcript_path[:-6] if transcript_path.endswith(".jsonl") else transcript_path
     paths = [("main", transcript_path)] + [
@@ -437,9 +459,12 @@ def update_prs(state, sid, transcript_path):
         except OSError:
             continue
         pend = fs.setdefault("pend", [])
+        cand = fs.setdefault("cand", {})
         for line in lines:
-            scan_pr_line(line, sess["found"], pend)
+            scan_pr_line(line, sess["found"], pend, cand)
         del pend[:-20]
+        for k in list(cand)[:-20]:
+            del cand[k]
         fs["off"] = end
 
 
