@@ -118,6 +118,7 @@ Settings are plugin options, edited in `/config` (Claude Code 2.1.271 or later; 
 | `pr_show_obsolete` | off | Show merged and closed PRs dimmed (counted toward `pr_max`); otherwise hidden |
 | `pr_show_age` | off | Suffix each PR with time since its last update (`#12·3d`) |
 | `monthly_budget` | `1000` | Budget in USD (minimum 1) |
+| `days_per_week` | `7` | Active days per week, counted from Monday (`5` = Mon-Fri); average and projection skip other days (1-7) |
 
 Model name and budget status always show. The table shows when `breakdown` is on and at least one period is selected. List options are not editable in `/config`, hence one boolean per segment. Missing or malformed settings fall back to defaults.
 
@@ -126,6 +127,7 @@ Model name and budget status always show. The table shows when `breakdown` is on
 | Setting | Default | Effect |
 |---|---|---|
 | `CLAUDE_MONTHLY_BUDGET` | none | Budget in USD; overrides `monthly_budget` |
+| `CLAUDE_DAYS_PER_WEEK` | none | Active days per week, 1-7; overrides `days_per_week` |
 | `CLAUDE_SPEND_BACKFILL` | `1` | `0` skips the first-run backfill |
 | `CLAUDE_SPEND_FILE` | `~/.claude/monthly_spend.json` | State file |
 | `~/.claude/spend_prices.json` | none | Price overrides, e.g. `{"claude-opus-5-5": [4, 20, 0.2]}` as `[input, output, cache_read]` per MTok |

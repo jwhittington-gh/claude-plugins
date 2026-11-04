@@ -2,10 +2,11 @@
 """Claude Code status line: model, session/day/week/month cost, average, budget projection.
 
 Run with --report for a detailed breakdown.
-Env: CLAUDE_MONTHLY_BUDGET (default 1000), CLAUDE_SPEND_BACKFILL=0 to skip the
+Env: CLAUDE_MONTHLY_BUDGET (default 1000), CLAUDE_DAYS_PER_WEEK (1-7, default 7),
+CLAUDE_SPEND_BACKFILL=0 to skip the
 one-time transcript backfill, CLAUDE_SPEND_FILE to move the state file.
-Options (show_* and breakdown* settings, monthly_budget) come from the plugin's userConfig, edited in
-/config and stored in settings.json pluginConfigs; env CLAUDE_MONTHLY_BUDGET wins.
+Options (show_* and breakdown* settings, monthly_budget, days_per_week) come from the plugin's userConfig, edited in
+/config and stored in settings.json pluginConfigs; env CLAUDE_MONTHLY_BUDGET and CLAUDE_DAYS_PER_WEEK win.
 Optional ~/.claude/spend_prices.json overrides PRICES. macOS/Linux only (fcntl).
 """
 import copy
@@ -46,12 +47,14 @@ class Config:
         "pr_show_obsolete": False,
         "pr_show_age": False,
         "monthly_budget": 1000,
+        "days_per_week": 7,
     }
 
     def __init__(self, options=None):
         self._opts = dict(self.DEFAULTS)
         self._opts.update(options or {})
         self._env_budget = os.environ.get("CLAUDE_MONTHLY_BUDGET")
+        self._env_days = os.environ.get("CLAUDE_DAYS_PER_WEEK")
 
     @classmethod
     def load(cls):
@@ -138,6 +141,20 @@ class Config:
             return float(self._env_budget or self._opts["monthly_budget"])
         except (TypeError, ValueError):
             return float(self._opts["monthly_budget"])
+
+    @property
+    def days_per_week(self):
+        """Active days per week, 1-7 (first N days from Monday); CLAUDE_DAYS_PER_WEEK wins over the option."""
+        for raw in (self._env_days, self._opts["days_per_week"]):
+            try:
+                if isinstance(raw, bool) or raw in (None, ""):
+                    continue
+                f = float(raw)
+                if f == int(f) and 1 <= f <= 7:
+                    return int(f)
+            except (TypeError, ValueError, OverflowError):
+                continue
+        return 7
 
 
 CONFIG = Config.load()
@@ -780,13 +797,27 @@ def breakdown_table(state, periods, split, session_id, now):
     return "\n".join(lines)
 
 
+def active_days(start, end, n):
+    """Count days from start to end inclusive whose weekday is among the first n (Mon=0)."""
+    return sum(1 for i in range((end - start).days + 1) if (start + timedelta(days=i)).weekday() < n)
+
+
 def budget_warning(total, avg, proj, today):
     """Budget status text for the status line."""
     budget = CONFIG.monthly_budget
+    n = CONFIG.days_per_week
     if total >= budget:
         return "⚠ OVER BUDGET"
     if proj > budget and avg > 0:
-        out = today + timedelta(days=(budget - total) / avg)
+        needed = (budget - total) / avg  # active days of spend left before the budget runs out
+        out = today
+        for _ in range(int(needed)):
+            out += timedelta(days=1)
+            while out.weekday() >= n:
+                out += timedelta(days=1)
+        out += timedelta(days=needed - int(needed))
+        while out.weekday() >= n:
+            out += timedelta(days=1)
         return f"⚠ budget out ~{out.strftime('%b %d').replace(' 0', ' ')}"
     if proj > 0.8 * budget:
         return "⚠ nearing budget"
@@ -794,11 +825,14 @@ def budget_warning(total, avg, proj, today):
 
 
 def projection(total, today):
-    """Average daily spend, projected month-end spend, and a color for the budget status."""
+    """Average spend per active day, projected month-end spend, and a color for the budget status."""
     budget = CONFIG.monthly_budget
-    avg = total / today.day
-    days_in_month = (today.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
-    proj = avg * days_in_month.day
+    n = CONFIG.days_per_week
+    elapsed = active_days(today.replace(day=1), today, n)
+    avg = total / elapsed if elapsed else 0.0
+    month_end = (today.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    left = active_days(today + timedelta(days=1), month_end, n)
+    proj = avg * (elapsed + left) if elapsed else total  # equals total + avg * left
     color = RED if proj > budget else YELLOW if proj > 0.8 * budget else GREEN
     return avg, proj, color
 
