@@ -15,7 +15,8 @@ Install the spend status line from this plugin.
    - It takes effect on the next status line refresh.
    - The first refresh scans past transcripts to backfill totals; set `CLAUDE_SPEND_BACKFILL=0` before that to skip it.
    - `CLAUDE_MONTHLY_BUDGET` sets the budget (default 1000).
+   - `CLAUDE_DAYS_PER_WEEK` (1-7, default 7) counts only the first N weekdays in the projection.
    - Costs are list-price estimates, not billing.
    - Re-run this skill after a plugin update to refresh the copy.
 
-Plugin options (segments, monthly budget) are edited in `/config`.
+Plugin options (segments, monthly budget, days per week) are edited in `/config`.

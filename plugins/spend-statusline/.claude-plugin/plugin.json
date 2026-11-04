@@ -110,6 +110,14 @@
       "description": "Monthly budget used for the projection and budget status. CLAUDE_MONTHLY_BUDGET overrides it.",
       "default": 1000,
       "min": 1
+    },
+    "days_per_week": {
+      "type": "number",
+      "title": "Active days per week",
+      "description": "Days per week counted by the average and projection, from Monday (5 = Monday-Friday). CLAUDE_DAYS_PER_WEEK overrides it.",
+      "default": 7,
+      "min": 1,
+      "max": 7
     }
   }
 }
