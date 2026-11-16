@@ -1,11 +1,18 @@
 {
   "name": "jwhittington-plugins",
-  "owner": { "name": "jwhittington-gh" },
+  "owner": {
+    "name": "jwhittington-gh"
+  },
   "plugins": [
     {
       "name": "spend-statusline",
       "source": "./plugins/spend-statusline",
       "description": "Status line with session/day/week/month spend and a monthly budget projection."
+    },
+    {
+      "name": "live-plan",
+      "source": "./plugins/live-plan",
+      "description": "Live pane of the agent's plan steps and running shells with ETAs, plus a /queue for follow-up tasks."
     }
   ]
 }

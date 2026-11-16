@@ -1,0 +1,14 @@
+{
+  "name": "live-plan",
+  "version": "0.2.0",
+  "description": "Live pane of plan steps, running shells (with ETAs) and a follow-up task queue",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "auto_open": {
+      "type": "boolean",
+      "title": "Open pane at session start",
+      "description": "Open the live plan pane when a session starts. Off: open it with /plan-pane.",
+      "default": true
+    }
+  }
+}
